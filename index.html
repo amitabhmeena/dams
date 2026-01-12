@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>India Map – Boundaries & Dams</title>
+  <title>India Map – 2D / 3D Boundaries & Dams</title>
 
-  <link rel="stylesheet"
-        href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
   <script src="https://js.arcgis.com/4.29/"></script>
 
   <style>
@@ -26,7 +25,7 @@
       font-family: Arial, sans-serif;
       font-size: 13px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      max-width: 230px;
+      max-width: 260px;
     }
 
     .section {
@@ -52,21 +51,28 @@
 
 <div id="controls">
 
-  <div class="section">Basemap</div>
+  <div class="section">View Mode</div>
+  <select id="viewMode">
+    <option value="2d">2D Map</option>
+    <option value="3d">3D Scene (Satellite)</option>
+  </select>
+
+  <div class="section">Basemap (2D)</div>
   <select id="basemapSelect">
-    <option value="streets">Street</option>
+    <option value="topo">Topographic (Default)</option>
     <option value="satellite">Satellite</option>
+    <option value="streets">Street</option>
     <option value="none">No basemap</option>
   </select>
 
-  <div class="section">Boundaries</div>
-  <label><input type="checkbox" id="stateChk"> State Boundary</label>
+  <div class="section">Boundaries (2D)</div>
+  <label><input type="checkbox" id="stateChk" checked> State Boundary</label>
   <label><input type="checkbox" id="districtChk"> District Boundary</label>
   <label><input type="checkbox" id="riverChk"> River</label>
   <label><input type="checkbox" id="watershedChk"> Watershed</label>
 
   <div class="section">Infrastructure</div>
-  <label><input type="checkbox" id="damChk"> Dam Locations</label>
+  <label><input type="checkbox" id="damChk" checked> Dam Locations</label>
 
 </div>
 
@@ -76,45 +82,42 @@
 require([
   "esri/Map",
   "esri/views/MapView",
+  "esri/views/SceneView",
   "esri/layers/MapImageLayer",
   "esri/layers/GraphicsLayer",
   "esri/Graphic",
   "esri/config"
 ], function (
-  Map, MapView, MapImageLayer, GraphicsLayer, Graphic, esriConfig
+  Map, MapView, SceneView,
+  MapImageLayer, GraphicsLayer, Graphic, esriConfig
 ) {
 
-  /* 🔐 Token injection for Bharat Map services */
+  /* 🔐 Bharat Map token interceptor */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
     before: function (params) {
-      params.requestOptions.query =
-        params.requestOptions.query || {};
+      params.requestOptions.query = params.requestOptions.query || {};
+      const u = params.url;
 
-      const url = params.url;
-
-      if (url.includes("State_Boundary"))
+      if (u.includes("State_Boundary"))
         params.requestOptions.query.token =
           "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
-
-      else if (url.includes("District_Boundary"))
+      else if (u.includes("District_Boundary"))
         params.requestOptions.query.token =
           "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
-
-      else if (url.includes("River"))
+      else if (u.includes("River"))
         params.requestOptions.query.token =
           "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
-
-      else if (url.includes("Watershed"))
+      else if (u.includes("Watershed"))
         params.requestOptions.query.token =
           "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
     }
   });
 
-  /* 🗺️ Boundary layers (OFF by default) */
+  /* 🗺️ 2D Boundary layers */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
-    visible: false
+    visible: true
   });
 
   const districtLayer = new MapImageLayer({
@@ -132,38 +135,68 @@ require([
     visible: false
   });
 
-  /* 🗺️ Map */
-  const map = new Map({
-    basemap: "streets-vector",
+  /* 🗺️ Maps */
+  const map2D = new Map({
+    basemap: "topo-vector",
     layers: [stateLayer, districtLayer, riverLayer, watershedLayer]
   });
 
-  const view = new MapView({
+  const map3D = new Map({
+    basemap: "satellite",
+    ground: "world-elevation"
+  });
+
+  /* 🔴 Dam layer (ON by default) */
+  const damLayer = new GraphicsLayer({ visible: true });
+  map2D.add(damLayer);
+  map3D.add(damLayer);
+
+  /* Views */
+  const mapView = new MapView({
     container: "viewDiv",
-    map: map,
+    map: map2D,
     center: [78.9629, 22.5937],
     zoom: 4
   });
 
-  /* 🎚️ Layer toggles */
+  const sceneView = new SceneView({
+    container: null,
+    map: map3D,
+    center: [78.9629, 22.5937],
+    zoom: 4
+  });
+
+  viewMode.value = "2d";
+
+  /* View switch */
+  viewMode.onchange = () => {
+    if (viewMode.value === "3d") {
+      mapView.container = null;
+      sceneView.container = "viewDiv";
+    } else {
+      sceneView.container = null;
+      mapView.container = "viewDiv";
+    }
+  };
+
+  /* Basemap switch (2D only) */
+  basemapSelect.onchange = () => {
+    if (basemapSelect.value === "none") map2D.basemap = null;
+    else if (basemapSelect.value === "satellite") map2D.basemap = "satellite";
+    else if (basemapSelect.value === "streets") map2D.basemap = "streets-vector";
+    else map2D.basemap = "topo-vector";
+  };
+
+  /* Boundary toggles */
   stateChk.onchange = () => stateLayer.visible = stateChk.checked;
   districtChk.onchange = () => districtLayer.visible = districtChk.checked;
   riverChk.onchange = () => riverLayer.visible = riverChk.checked;
   watershedChk.onchange = () => watershedLayer.visible = watershedChk.checked;
 
-  /* 🔽 Basemap selector */
-  basemapSelect.onchange = () => {
-    if (basemapSelect.value === "none") map.basemap = null;
-    else if (basemapSelect.value === "satellite") map.basemap = "satellite";
-    else map.basemap = "streets-vector";
-  };
-
-  /* 🔴 Dam layer (static JSON) */
-  const damLayer = new GraphicsLayer({ visible: false });
-  map.add(damLayer);
-
+  /* Dam toggle */
   damChk.onchange = () => damLayer.visible = damChk.checked;
 
+  /* DMS → Decimal */
   function dmsToDecimal(dms) {
     if (!dms) return null;
     const p = dms.match(/\d+/g);
@@ -171,6 +204,7 @@ require([
     return (+p[0]) + (+p[1] / 60) + ((+p[2] || 0) / 3600);
   }
 
+  /* Load dams.json */
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
@@ -199,6 +233,22 @@ require([
         }));
       });
     });
+
+  /* Hover popup (2D only) */
+  mapView.on("pointer-move", event => {
+    mapView.hitTest(event).then(resp => {
+      const hit = resp.results.find(r => r.graphic.layer === damLayer);
+      if (hit) {
+        mapView.popup.open({
+          location: hit.graphic.geometry,
+          title: hit.graphic.popupTemplate.title,
+          content: ""
+        });
+      } else {
+        mapView.popup.close();
+      }
+    });
+  });
 
 });
 </script>
