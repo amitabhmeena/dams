@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>India Map – Boundaries & Dam Locations</title>
+
+  <link rel="stylesheet"
+        href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.29/"></script>
+
+  <style>
+    html, body, #viewDiv {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 12px;
+      z-index: 99;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      max-height: 90%;
+      overflow-y: auto;
+      width: 230px;
+    }
+
+    .section {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    label {
+      display: block;
+      margin-top: 5px;
+      cursor: pointer;
+    }
+
+    select {
+      width: 100%;
+      margin-top: 5px;
+      padding: 4px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="controls">
+
+  <div class="section">Basemap</div>
+  <select id="basemapSelect">
+    <option value="topo">Topo</option>
+    <option value="satellite">Satellite</option>
+    <option value="none">No Basemap</option>
+  </select>
+
+  <div class="section">Boundaries / Layers</div>
+  <label><input type="checkbox" data-layer="state"> State Boundary</label>
+  <label><input type="checkbox" data-layer="district"> District Boundary</label>
+  <label><input type="checkbox" data-layer="village"> Village Boundary</label>
+  <label><input type="checkbox" data-layer="population"> Population Density</label>
+  <label><input type="checkbox" data-layer="adminhq"> Admin Head Quarter</label>
+  <label><input type="checkbox" data-layer="river"> River</label>
+  <label><input type="checkbox" data-layer="watershed"> Watershed</label>
+
+  <div class="section">Infrastructure</div>
+  <label><input type="checkbox" id="damToggle"> Dam Locations</label>
+
+</div>
+
+<div id="viewDiv"></div>
+
+<script>
+require([
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/MapImageLayer",
+  "esri/layers/GraphicsLayer",
+  "esri/Graphic",
+  "esri/config"
+], function (
+  Map,
+  MapView,
+  MapImageLayer,
+  GraphicsLayer,
+  Graphic,
+  esriConfig
+) {
+
+  /* 🔐 Bharat Map token injection */
+  esriConfig.request.interceptors.push({
+    urls: /mapservice\.gov\.in/,
+    before: function (params) {
+      params.requestOptions.query =
+        params.requestOptions.query || {};
+
+      const url = params.url;
+
+      if (url.includes("State_Boundary"))
+        params.requestOptions.query.token = "_673swXS9ehOFxEoX4fxICSMExDsSSGtY4_OdXt7MZKtfetlyrhptUgMG6nfL9ibYOl8YhnnrwUelGPbmwcVgQ..";
+
+      else if (url.includes("District_Boundary"))
+        params.requestOptions.query.token = "A1CbUVi8E2j_BsYDfIf60U_M5S_wnH1yDiHjibmqmIdhUJpKQiKkXGUOEO2c8SR_58nVKQ513npTGzN_p3SB7w..";
+
+      else if (url.includes("Population_Density"))
+        params.requestOptions.query.token = "77tQjGcD5jmNtOjIuD_mROgnwOTCX7yWbBvlgnnSjJvRaIo1P5qdZ1K-7LCxYBnaLJsz3RBgfNsCQTSRyZFIdQ..";
+
+      else if (url.includes("Village_Boundary"))
+        params.requestOptions.query.token = "HKEQAoxH4SMKzcAgG0Iw8l-jGgsSIobNeSZDBu24LnPwnwPj8JL6AwG2am6Trnh-CRF1Qifz74HdkX0unwA0gw..";
+
+      else if (url.includes("Admin_Head_Quarter"))
+        params.requestOptions.query.token = "0I_MZQ-kyO5OJNW82xRdRD0QhzDXZXL8Xuw0gy-ogdqsfpziUSP6TEL7Ngpr5VW7W05o3VzXRFYByYYlB0irhQ..";
+
+      else if (url.includes("River"))
+        params.requestOptions.query.token = "jUZts6LTzBaiYqJrZFTAPQH1sB3aPegsO_nOA_3hezdUBp1haD99ZfSVXc_hZ5u7";
+
+      else if (url.includes("Watershed"))
+        params.requestOptions.query.token = "AbajdEQeJmulXvJtIxl-BhIKC0xnbeBKz4-l2_QTEhBYK6fhpySDYQCqUTU5VMeqSLBkuFv6SZPgU5MD_H6AKA..";
+    }
+  });
+
+  /* 🗺️ Boundary layers (OFF by default) */
+  const layers = {
+    state: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer", visible: false }),
+    district: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/District_Boundary/MapServer", visible: false }),
+    village: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/Village_Boundary/MapServer", visible: false }),
+    population: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/Population_Density/MapServer", visible: false }),
+    adminhq: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/Admin_Head_Quarter/MapServer", visible: false }),
+    river: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/River/MapServer", visible: false }),
+    watershed: new MapImageLayer({ url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/Watershed/MapServer", visible: false })
+  };
+
+  /* 🗺️ Map */
+  const map = new Map({
+    basemap: "topo-vector",
+    layers: Object.values(layers)
+  });
+
+  const view = new MapView({
+    container: "viewDiv",
+    map: map,
+    center: [78.9629, 22.5937],
+    zoom: 4
+  });
+
+  /* 🎚️ Boundary toggles */
+  document.querySelectorAll("[data-layer]").forEach(cb => {
+    cb.addEventListener("change", function () {
+      layers[this.dataset.layer].visible = this.checked;
+    });
+  });
+
+  /* 🔽 Basemap selector */
+  document.getElementById("basemapSelect").addEventListener("change", function () {
+    if (this.value === "none") map.basemap = null;
+    else if (this.value === "satellite") map.basemap = "satellite";
+    else map.basemap = "topo-vector";
+  });
+
+  /* 🔴 Dam layer */
+  const damLayer = new GraphicsLayer({ visible: false });
+  map.add(damLayer);
+
+  document.getElementById("damToggle").addEventListener("change", e => {
+    damLayer.visible = e.target.checked;
+  });
+
+  /* DMS → Decimal */
+  function dmsToDecimal(dms) {
+    if (!dms) return null;
+    const p = dms.match(/\d+/g);
+    if (!p || p.length < 2) return null;
+    return (+p[0]) + (+p[1] / 60) + ((+p[2] || 0) / 3600);
+  }
+
+  /* Fetch dams from Node proxy */
+  fetch("/api/dams")
+    .then(r => r.json())
+    .then(json => {
+      if (!json.success) return;
+
+      json.data.forEach(dam => {
+        const lat = dmsToDecimal(dam.Latitude);
+        const lon = dmsToDecimal(dam.Longitude);
+        if (!lat || !lon) return;
+
+        damLayer.add(new Graphic({
+          geometry: { type: "point", latitude: lat, longitude: lon },
+          symbol: {
+            type: "simple-marker",
+            color: "red",
+            size: "7px",
+            outline: { color: "white", width: 1 }
+          },
+          popupTemplate: {
+            title: dam.Name_of_Dam,
+            content: `
+              <b>State:</b> ${dam.State}<br>
+              <b>District:</b> ${dam.District}<br>
+              <b>Purpose:</b> ${dam.Purpose}<br>
+              <b>Year:</b> ${dam["Year of completion"]}
+            `
+          }
+        }));
+      });
+    });
+
+});
+</script>
+
+</body>
+</html>
