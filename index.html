@@ -36,8 +36,6 @@ html, body, #viewDiv {
   overflow: hidden;
 }
 
-#search-container { margin-bottom: 8px; }
-
 .section { font-weight: bold; margin-top: 10px; }
 
 input[type="text"], select {
@@ -56,8 +54,13 @@ input[type="text"], select {
   display: none;
 }
 
-.result-item { padding: 6px; cursor: pointer; }
-.result-item:hover { background: #f0f0f0; }
+.result-item {
+  padding: 6px;
+  cursor: pointer;
+}
+.result-item:hover {
+  background: #f0f0f0;
+}
 
 @media (max-width: 768px) {
   #controls { width: 92%; left: 4%; }
@@ -114,14 +117,19 @@ require([
   MapImageLayer, GraphicsLayer, Graphic, TextSymbol, esriConfig
 ) {
 
-  /* Mobile detection */
+  /* ---------- MOBILE / iOS DETECTION ---------- */
   const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const controls = document.getElementById("controls");
 
-  function collapse() { if (isMobile) controls.classList.add("collapsed"); }
-  function expand() { if (isMobile) controls.classList.remove("collapsed"); }
+  function collapse() {
+    if (isMobile || isIOS) controls.classList.add("collapsed");
+  }
+  function expand() {
+    if (isMobile || isIOS) controls.classList.remove("collapsed");
+  }
 
-  /* Token interceptor */
+  /* ---------- TOKEN INTERCEPTOR ---------- */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
     before: p => {
@@ -138,7 +146,7 @@ require([
     }
   });
 
-  /* Layers */
+  /* ---------- LAYERS ---------- */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
     visible: true
@@ -179,16 +187,25 @@ require([
   const view = new MapView({
     container: "viewDiv",
     map,
-    extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } }
+    extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } },
+    popup: {
+      dockEnabled: true,
+      dockOptions: {
+        position: "top-right",
+        breakpoint: false
+      }
+    }
   });
 
-  /* Collapse panel on map interaction (mobile) */
+  /* Collapse controls on map interaction (Safari safe) */
   view.on("drag", collapse);
   view.on("mouse-wheel", collapse);
   view.on("click", collapse);
+  view.on("pointer-down", collapse);
+  view.on("touchstart", collapse);
   document.getElementById("damSearch").addEventListener("focus", expand);
 
-  /* Toggle bindings */
+  /* ---------- TOGGLES ---------- */
   basemapSelect.onchange = () => {
     map.basemap =
       basemapSelect.value === "none" ? null :
@@ -208,6 +225,7 @@ require([
     smallLabelLayer.visible = damChk.checked && view.zoom >= 10;
   };
 
+  /* ---------- UTILITIES ---------- */
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
     return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
@@ -222,6 +240,7 @@ require([
 
   const damGraphics = [];
 
+  /* ---------- LOAD DAMS ---------- */
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
@@ -270,12 +289,13 @@ require([
       });
     });
 
+  /* ---------- ZOOM-BASED LABEL VISIBILITY ---------- */
   view.watch("zoom", z => {
     largeLabelLayer.visible = (z >= 7 && damChk.checked);
     smallLabelLayer.visible = (z >= 10 && damChk.checked);
   });
 
-  /* Search */
+  /* ---------- SEARCH ---------- */
   damSearch.addEventListener("input", function () {
     const q = this.value.toLowerCase();
     results.innerHTML = "";
@@ -296,16 +316,12 @@ require([
       div.onclick = () => {
         results.style.display = "none";
         damSearch.value = g.attributes.Name_of_Dam;
-        view.goTo(
-  { target: g.geometry, zoom: 11 },
-  { duration: 2000 }
-);
-
-view.popup.open({
-  features: [g],      // ✅ bind popup to selected dam
-  location: g.geometry
-});
-
+        view.popup.close();
+        view.goTo({ target: g.geometry, zoom: 11 }, { duration: 2000 });
+        view.popup.open({
+          features: [g],
+          location: g.geometry
+        });
       };
       results.appendChild(div);
     });
