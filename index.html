@@ -9,7 +9,10 @@
 
 <style>
 html, body, #viewDiv {
-  margin: 0; padding: 0; height: 100%; width: 100%;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
 }
 
 #controls {
@@ -19,13 +22,16 @@ html, body, #viewDiv {
   background: white;
   padding: 12px;
   z-index: 99;
-  font-family: Arial;
+  font-family: Arial, sans-serif;
   font-size: 13px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   max-width: 300px;
 }
 
-.section { font-weight: bold; margin-top: 8px; }
+.section {
+  font-weight: bold;
+  margin-top: 8px;
+}
 
 input[type="text"], select {
   width: 100%;
@@ -44,7 +50,10 @@ input[type="text"], select {
   padding: 5px;
   cursor: pointer;
 }
-.result-item:hover { background: #f0f0f0; }
+
+.result-item:hover {
+  background: #f0f0f0;
+}
 </style>
 </head>
 
@@ -52,163 +61,20 @@ input[type="text"], select {
 
 <div id="controls">
 
-<div class="section">Search Dam</div>
-<input type="text" id="damSearch" placeholder="Type dam name…" />
-<div id="results"></div>
+  <div class="section">Search Dam</div>
+  <input type="text" id="damSearch" placeholder="Type dam name…" />
+  <div id="results"></div>
 
-<div class="section">Basemap</div>
-<select id="basemapSelect">
-  <option value="topo">Topographic</option>
-  <option value="satellite">Satellite</option>
-  <option value="streets">Street</option>
-  <option value="none">No basemap</option>
-</select>
+  <div class="section">Basemap</div>
+  <select id="basemapSelect">
+    <option value="topo">Topographic</option>
+    <option value="satellite">Satellite</option>
+    <option value="streets">Street</option>
+    <option value="none">No basemap</option>
+  </select>
 
-<div class="section">Layers</div>
-<label><input type="checkbox" id="stateChk" checked> State Boundary</label>
-<label><input type="checkbox" id="districtChk"> District Boundary</label>
-<label><input type="checkbox" id="riverChk"> River</label>
-<label><input type="checkbox" id="watershedChk"> Watershed</label>
-<label><input type="checkbox" id="damChk" checked> Dams</label>
-
-</div>
-
-<div id="viewDiv"></div>
-
-<script>
-require([
-  "esri/Map",
-  "esri/views/MapView",
-  "esri/layers/MapImageLayer",
-  "esri/layers/GraphicsLayer",
-  "esri/Graphic",
-  "esri/config"
-], function(Map, MapView, MapImageLayer, GraphicsLayer, Graphic, esriConfig) {
-
-/* ---------- CONSTANTS ---------- */
-const MIN_SIZE = 2;
-const MAX_SIZE = 5;
-
-/* ---------- TOKEN ---------- */
-esriConfig.request.interceptors.push({
-  urls: /mapservice\.gov\.in/,
-  before: p => {
-    p.requestOptions.query = p.requestOptions.query || {};
-    p.requestOptions.query.token =
-      "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
-  }
-});
-
-/* ---------- LAYERS ---------- */
-const stateLayer = new MapImageLayer({
-  url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
-  visible: true
-});
-const damLayer = new GraphicsLayer();
-
-const map = new Map({
-  basemap: "topo-vector",
-  layers: [stateLayer, damLayer]
-});
-
-const view = new MapView({
-  container: "viewDiv",
-  map,
-  extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } }
-});
-
-/* ---------- HELPERS ---------- */
-function dmsToDecimal(dms) {
-  const p = dms?.match(/\d+/g);
-  return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
-}
-
-/* ---------- LOAD DAMS ---------- */
-const damGraphics = [];
-let minLog = Infinity, maxLog = -Infinity;
-
-fetch("dams.json")
-.then(r => r.json())
-.then(json => {
-
-  // compute log min/max
-  json.data.forEach(d => {
-    const v = Number(d["Gross Storage Capacity(mcm)"]);
-    if (v > 0) {
-      const lv = Math.log10(v);
-      minLog = Math.min(minLog, lv);
-      maxLog = Math.max(maxLog, lv);
-    }
-  });
-
-  json.data.forEach(dam => {
-    const lat = dmsToDecimal(dam.Latitude);
-    const lon = dmsToDecimal(dam.Longitude);
-    if (!lat || !lon) return;
-
-    const storage = Number(dam["Gross Storage Capacity(mcm)"]);
-    let baseSize = MIN_SIZE;
-
-    if (storage > 0 && maxLog > minLog) {
-      const lv = Math.log10(storage);
-      baseSize =
-        MIN_SIZE +
-        (lv - minLog) * (MAX_SIZE - MIN_SIZE) / (maxLog - minLog);
-    }
-
-    const g = new Graphic({
-      geometry: { type: "point", latitude: lat, longitude: lon },
-      attributes: {
-        ...dam,
-        __baseSize: baseSize
-      },
-      symbol: {
-        type: "simple-marker",
-        color: [0,102,204,0.9],
-        size: baseSize,
-        outline: null
-      },
-      popupTemplate: {
-        title: "{Name_of_Dam}",
-        content: `<b>Gross Storage (MCM):</b> ${storage}`
-      }
-    });
-
-    damGraphics.push(g);
-    damLayer.add(g);
-  });
-
-  updateSizes(); // initial sizing
-});
-
-/* ---------- ZOOM-BASED RESIZE ---------- */
-function zoomMultiplier(z) {
-  if (z <= 4) return 0.6;
-  if (z >= 10) return 1.2;
-  return 0.6 + (z - 4) * (0.6 / 6);
-}
-
-function updateSizes() {
-  const factor = zoomMultiplier(view.zoom);
-
-  damGraphics.forEach(g => {
-    const newSize = g.attributes.__baseSize * factor;
-
-    // IMPORTANT: create a NEW symbol object
-    g.symbol = {
-      type: "simple-marker",
-      color: [0,102,204,0.9],
-      outline: null,
-      size: newSize
-    };
-  });
-}
-
-// 🔥 THIS triggers redraw correctly
-view.watch("zoom", updateSizes);
-
-});
-</script>
-
-</body>
-</html>
+  <div class="section">Layers</div>
+  <label><input type="checkbox" id="stateChk" checked> State Boundary</label>
+  <label><input type="checkbox" id="districtChk"> District Boundary</label>
+  <label><input type="checkbox" id="riverChk"> River</label>
+  <label><input t
