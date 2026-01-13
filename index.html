@@ -87,7 +87,7 @@ require([
   Search, esriConfig
 ) {
 
-  /* 🔐 Bharat Map token interceptor */
+  /* Bharat Map token interceptor */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
     before: function (params) {
@@ -95,21 +95,17 @@ require([
       const u = params.url;
 
       if (u.includes("State_Boundary"))
-        params.requestOptions.query.token =
-          "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
+        params.requestOptions.query.token = "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
       else if (u.includes("District_Boundary"))
-        params.requestOptions.query.token =
-          "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
+        params.requestOptions.query.token = "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
       else if (u.includes("River"))
-        params.requestOptions.query.token =
-          "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
+        params.requestOptions.query.token = "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
       else if (u.includes("Watershed"))
-        params.requestOptions.query.token =
-          "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
+        params.requestOptions.query.token = "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
     }
   });
 
-  /* 🗺️ Boundary layers */
+  /* Boundary layers */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
     visible: true
@@ -130,37 +126,22 @@ require([
     visible: false
   });
 
-  /* 🔴 Dam layer */
   const damLayer = new GraphicsLayer({ visible: true });
 
-  /* 🗺️ Map */
   const map = new Map({
     basemap: "topo-vector",
-    layers: [
-      stateLayer,
-      districtLayer,
-      riverLayer,
-      watershedLayer,
-      damLayer
-    ]
+    layers: [stateLayer, districtLayer, riverLayer, watershedLayer, damLayer]
   });
-
-  /* 🇮🇳 India extent (correct initial view) */
-  const indiaExtent = {
-    xmin: 68,
-    ymin: 6,
-    xmax: 97,
-    ymax: 37,
-    spatialReference: { wkid: 4326 }
-  };
 
   const view = new MapView({
     container: "viewDiv",
     map: map,
-    extent: indiaExtent
+    extent: {
+      xmin: 68, ymin: 6, xmax: 97, ymax: 37,
+      spatialReference: { wkid: 4326 }
+    }
   });
 
-  /* Basemap switch */
   basemapSelect.onchange = () => {
     if (basemapSelect.value === "none") map.basemap = null;
     else if (basemapSelect.value === "satellite") map.basemap = "satellite";
@@ -168,25 +149,21 @@ require([
     else map.basemap = "topo-vector";
   };
 
-  /* Layer toggles */
   stateChk.onchange = () => stateLayer.visible = stateChk.checked;
   districtChk.onchange = () => districtLayer.visible = districtChk.checked;
   riverChk.onchange = () => riverLayer.visible = riverChk.checked;
   watershedChk.onchange = () => watershedLayer.visible = watershedChk.checked;
   damChk.onchange = () => damLayer.visible = damChk.checked;
 
-  /* DMS → Decimal */
   function dmsToDecimal(dms) {
-    if (!dms) return null;
-    const p = dms.match(/\d+/g);
-    if (!p || p.length < 2) return null;
-    return (+p[0]) + (+p[1] / 60) + ((+p[2] || 0) / 3600);
+    const p = dms?.match(/\d+/g);
+    return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
   }
 
-  /* Load dams.json */
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
+
       json.data.forEach(dam => {
         const lat = dmsToDecimal(dam.Latitude);
         const lon = dmsToDecimal(dam.Longitude);
@@ -194,12 +171,18 @@ require([
 
         damLayer.add(new Graphic({
           geometry: { type: "point", latitude: lat, longitude: lon },
-          attributes: dam,
+          attributes: {
+            Name_of_Dam: dam.Name_of_Dam,
+            State: dam.State,
+            District: dam.District,
+            Purpose: dam.Purpose,
+            Year: dam["Year of completion"]
+          },
           symbol: {
             type: "simple-marker",
-            color: [255, 0, 0, 0.9],
-            size: 7,
-            outline: { color: "white", width: 1.5 }
+            color: [0, 102, 204, 0.9],
+            size: 3.5,
+            outline: null
           },
           popupTemplate: {
             title: "{Name_of_Dam}",
@@ -207,46 +190,30 @@ require([
               <b>State:</b> {State}<br>
               <b>District:</b> {District}<br>
               <b>Purpose:</b> {Purpose}<br>
-              <b>Year:</b> {Year of completion}
+              <b>Year:</b> {Year}
             `
           }
         }));
       });
 
-      /* 🔍 Search widget (DAM NAME SEARCH) */
       const search = new Search({
         view: view,
-        allPlaceholder: "Search dam name",
         includeDefaultSources: false,
+        allPlaceholder: "Search dam name",
+        resultGraphicEnabled: true,
         sources: [{
           layer: damLayer,
           searchFields: ["Name_of_Dam"],
           displayField: "Name_of_Dam",
           exactMatch: false,
           outFields: ["*"],
-          name: "Dams",
+          name: "Dam Name Search",
           placeholder: "Type dam name"
         }]
       });
 
       view.ui.add(search, "top-right");
     });
-
-  /* Hover popup */
-  view.on("pointer-move", event => {
-    view.hitTest(event).then(resp => {
-      const hit = resp.results.find(r => r.graphic.layer === damLayer);
-      if (hit) {
-        view.popup.open({
-          location: hit.graphic.geometry,
-          title: hit.graphic.attributes.Name_of_Dam,
-          content: ""
-        });
-      } else {
-        view.popup.close();
-      }
-    });
-  });
 
 });
 </script>
