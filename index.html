@@ -17,37 +17,43 @@ html, body, #viewDiv {
 
 #controls {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 12px;
+  left: 12px;
   background: white;
-  padding: 12px;
+  padding: 14px;
   z-index: 99;
   font-family: Arial, sans-serif;
   font-size: 13px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  max-width: 300px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  width: 340px;              /* FIX 1: wider box */
+  border-radius: 10px;       /* FIX 2: rounded corners */
 }
 
 .section {
   font-weight: bold;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 input[type="text"], select {
   width: 100%;
-  padding: 6px;
-  margin-top: 5px;
+  padding: 8px;
+  margin-top: 6px;
+  border-radius: 6px;        /* FIX 3: rounded inputs */
+  border: 1px solid #ccc;
+  box-sizing: border-box;
 }
 
 #results {
-  max-height: 150px;
+  max-height: 160px;
   overflow-y: auto;
   border: 1px solid #ccc;
+  border-radius: 6px;
   display: none;
+  margin-top: 4px;
 }
 
 .result-item {
-  padding: 5px;
+  padding: 6px;
   cursor: pointer;
 }
 
@@ -92,34 +98,29 @@ require([
   "esri/layers/GraphicsLayer",
   "esri/Graphic",
   "esri/config"
-], function(
+], function (
   Map, MapView,
   MapImageLayer, GraphicsLayer, Graphic, esriConfig
 ) {
 
-  /* 🔐 Bharat Map token interceptor */
+  /* 🔐 Token interceptor */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
-    before: function(p) {
+    before: p => {
       p.requestOptions.query = p.requestOptions.query || {};
       const u = p.url;
-
       if (u.includes("State_Boundary"))
-        p.requestOptions.query.token =
-          "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
+        p.requestOptions.query.token = "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
       else if (u.includes("District_Boundary"))
-        p.requestOptions.query.token =
-          "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
+        p.requestOptions.query.token = "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
       else if (u.includes("River"))
-        p.requestOptions.query.token =
-          "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
+        p.requestOptions.query.token = "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
       else if (u.includes("Watershed"))
-        p.requestOptions.query.token =
-          "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
+        p.requestOptions.query.token = "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
     }
   });
 
-  /* 🗺️ Boundary layers */
+  /* Layers */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
     visible: true
@@ -140,38 +141,25 @@ require([
     visible: false
   });
 
-  /* 🔵 Dam layer */
   const damLayer = new GraphicsLayer({ visible: true });
 
   const map = new Map({
     basemap: "topo-vector",
-    layers: [
-      stateLayer,
-      districtLayer,
-      riverLayer,
-      watershedLayer,
-      damLayer
-    ]
+    layers: [stateLayer, districtLayer, riverLayer, watershedLayer, damLayer]
   });
 
   const view = new MapView({
     container: "viewDiv",
-    map: map,
-    extent: {
-      xmin: 68,
-      ymin: 6,
-      xmax: 97,
-      ymax: 37,
-      spatialReference: { wkid: 4326 }
-    }
+    map,
+    extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } }
   });
 
-  /* UI bindings */
   basemapSelect.onchange = () => {
-    if (basemapSelect.value === "none") map.basemap = null;
-    else if (basemapSelect.value === "satellite") map.basemap = "satellite";
-    else if (basemapSelect.value === "streets") map.basemap = "streets-vector";
-    else map.basemap = "topo-vector";
+    map.basemap =
+      basemapSelect.value === "none" ? null :
+      basemapSelect.value === "satellite" ? "satellite" :
+      basemapSelect.value === "streets" ? "streets-vector" :
+      "topo-vector";
   };
 
   stateChk.onchange = () => stateLayer.visible = stateChk.checked;
@@ -180,20 +168,18 @@ require([
   watershedChk.onchange = () => watershedLayer.visible = watershedChk.checked;
   damChk.onchange = () => damLayer.visible = damChk.checked;
 
-  /* Helper: DMS → Decimal */
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
-    return p ? (+p[0] + p[1] / 60 + (p[2] || 0) / 3600) : null;
+    return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
   }
 
   const damGraphics = [];
 
-  /* Load dams.json */
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
-
       json.data.forEach(dam => {
+
         const lat = dmsToDecimal(dam.Latitude);
         const lon = dmsToDecimal(dam.Longitude);
         if (!lat || !lon) return;
@@ -201,28 +187,40 @@ require([
         const storage = Number(dam["Gross Storage Capacity(mcm)"]);
         const symbolSize = (!isNaN(storage) && storage >= 500) ? 5 : 2;
 
+        const popupContent = `
+          <b>PIC:</b> ${dam.PIC || "-"}<br>
+          <b>SDSO:</b> ${dam.SDSO || "-"}<br>
+          <b>State:</b> ${dam.State || "-"}<br>
+          <b>District:</b> ${dam.District || "-"}<br>
+          <b>River:</b> ${dam.River || "-"}<br>
+          <b>Dam Incharge:</b> ${dam.Dam_Incharge || "-"}<br>
+          <b>Height above LFL (m):</b> ${dam["Height above Lowest Foundation Level(m)"] || "-"}<br>
+          <b>Year of completion:</b> ${dam["Year of completion"] || "-"}<br>
+          <b>Basin:</b> ${dam.Basin || "-"}<br>
+          <b>Max Water Level (m):</b> ${dam["Max. Water Level(m) "] || "-"}<br>
+          <b>Full Reservoir Level (m):</b> ${dam["Full Reservoir Level(m)"] || "-"}<br>
+          <b>Gross Storage (MCM):</b> ${dam["Gross Storage Capacity(mcm)"] || "-"}<br>
+          <b>Designed Spillway Capacity:</b> ${dam["Designed Spillway Capacity"] || "-"}<br>
+          <b>Dam Length:</b> ${dam["Dam length"] || "-"}<br>
+          <b>Dam Type:</b> ${dam.dam_type || "-"}<br>
+          <b>Population at Risk:</b> ${dam.population_at_risk || "-"}<br>
+          <b>Purpose:</b> ${dam.Purpose || "-"}<br>
+          <b>Latitude:</b> ${dam.Latitude || "-"}<br>
+          <b>Longitude:</b> ${dam.Longitude || "-"}
+        `;
+
         const g = new Graphic({
-          geometry: {
-            type: "point",
-            latitude: lat,
-            longitude: lon
-          },
+          geometry: { type: "point", latitude: lat, longitude: lon },
           attributes: dam,
           symbol: {
             type: "simple-marker",
-            style: "circle",
-            color: [0, 102, 204, 0.9],
+            color: [0,102,204,0.9],
             size: symbolSize,
             outline: null
           },
           popupTemplate: {
-            title: "{Name_of_Dam}",
-            content: `
-              <b>State:</b> {State}<br>
-              <b>District:</b> {District}<br>
-              <b>Purpose:</b> {Purpose}<br>
-              <b>Gross Storage (MCM):</b> ${storage}
-            `
+            title: dam.Name_of_Dam,
+            content: popupContent
           }
         });
 
@@ -231,8 +229,8 @@ require([
       });
     });
 
-  /* 🔍 Autocomplete search */
-  damSearch.addEventListener("input", function() {
+  /* Autocomplete search */
+  damSearch.addEventListener("input", function () {
     const q = this.value.toLowerCase();
     results.innerHTML = "";
     results.style.display = "none";
@@ -245,7 +243,6 @@ require([
     if (!matches.length) return;
 
     results.style.display = "block";
-
     matches.forEach(g => {
       const div = document.createElement("div");
       div.className = "result-item";
