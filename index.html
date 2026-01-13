@@ -29,10 +29,7 @@ html, body, #viewDiv {
   border-radius: 10px;
 }
 
-.section {
-  font-weight: bold;
-  margin-top: 10px;
-}
+.section { font-weight: bold; margin-top: 10px; }
 
 input[type="text"], select {
   width: 100%;
@@ -56,9 +53,7 @@ input[type="text"], select {
   padding: 6px;
   cursor: pointer;
 }
-.result-item:hover {
-  background: #f0f0f0;
-}
+.result-item:hover { background: #f0f0f0; }
 </style>
 </head>
 
@@ -72,9 +67,9 @@ input[type="text"], select {
 
   <div class="section">Basemap</div>
   <select id="basemapSelect">
-    <option value="topo">Topographic</option>
-    <option value="satellite">Satellite</option>
+    <option value="satellite" selected>Satellite</option>
     <option value="streets">Street</option>
+    <option value="topo">Topographic</option>
     <option value="none">No basemap</option>
   </select>
 
@@ -142,17 +137,19 @@ require([
   });
 
   const damLayer = new GraphicsLayer({ visible: true });
-  const labelLayer = new GraphicsLayer({ visible: true });
+  const largeLabelLayer = new GraphicsLayer({ visible: false });
+  const smallLabelLayer = new GraphicsLayer({ visible: false });
 
   const map = new Map({
-    basemap: "topo-vector",
+    basemap: "satellite",
     layers: [
       stateLayer,
       districtLayer,
       riverLayer,
       watershedLayer,
       damLayer,
-      labelLayer
+      largeLabelLayer,
+      smallLabelLayer
     ]
   });
 
@@ -162,32 +159,19 @@ require([
     extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } }
   });
 
-  basemapSelect.onchange = () => {
-    map.basemap =
-      basemapSelect.value === "none" ? null :
-      basemapSelect.value === "satellite" ? "satellite" :
-      basemapSelect.value === "streets" ? "streets-vector" :
-      "topo-vector";
-  };
-
-  damChk.onchange = () => {
-    damLayer.visible = damChk.checked;
-    labelLayer.visible = damChk.checked;
-  };
-
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
     return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
   }
 
-  const damGraphics = [];
-
-  function formatLabel(name) {
+  function wrapLabel(name) {
     const parts = name.split(" ");
     if (parts.length <= 2) return name;
     const mid = Math.ceil(parts.length / 2);
     return parts.slice(0, mid).join(" ") + "\n" + parts.slice(mid).join(" ");
   }
+
+  const damGraphics = [];
 
   fetch("dams.json")
     .then(r => r.json())
@@ -203,7 +187,7 @@ require([
         const isLarge = (!isNaN(storage) && storage >= 500);
         const symbolSize = isLarge ? 5 : 2;
 
-        const damGraphic = new Graphic({
+        const g = new Graphic({
           geometry: { type: "point", latitude: lat, longitude: lon },
           attributes: dam,
           symbol: {
@@ -220,27 +204,34 @@ require([
           }
         });
 
-        damGraphics.push(damGraphic);
-        damLayer.add(damGraphic);
+        damGraphics.push(g);
+        damLayer.add(g);
+
+        const labelGraphic = new Graphic({
+          geometry: g.geometry,
+          symbol: new TextSymbol({
+            text: wrapLabel(dam.Name_of_Dam),
+            color: "orange",
+            font: { size: 7, family: "Arial", weight: "bold" },
+            yoffset: 8
+          })
+        });
 
         if (isLarge) {
-          labelLayer.add(new Graphic({
-            geometry: damGraphic.geometry,
-            symbol: new TextSymbol({
-              text: formatLabel(dam.Name_of_Dam),
-              color: "orange",
-              font: {
-                size: 7,
-                family: "Arial",
-                weight: "bold"
-              },
-              yoffset: 8
-            })
-          }));
+          largeLabelLayer.add(labelGraphic);
+        } else {
+          smallLabelLayer.add(labelGraphic);
         }
       });
     });
 
+  /* Zoom-based label visibility */
+  view.watch("zoom", z => {
+    largeLabelLayer.visible = (z >= 7);
+    smallLabelLayer.visible = (z >= 10);
+  });
+
+  /* Search with smooth zoom */
   damSearch.addEventListener("input", function () {
     const q = this.value.toLowerCase();
     results.innerHTML = "";
@@ -262,13 +253,10 @@ require([
         results.style.display = "none";
         damSearch.value = g.attributes.Name_of_Dam;
         view.goTo(
-          { target: g.geometry, zoom: 10 },
+          { target: g.geometry, zoom: 11 },
           { duration: 2000, easing: "ease-in-out" }
         );
-        view.popup.open({
-          location: g.geometry,
-          title: g.attributes.Name_of_Dam
-        });
+        view.popup.open({ location: g.geometry });
       };
       results.appendChild(div);
     });
