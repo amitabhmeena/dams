@@ -15,7 +15,8 @@ html, body, #viewDiv {
   width: 100%;
 }
 
-#controls {
+/* LEFT PANEL: Basemap + Layers */
+#controls-left {
   position: absolute;
   top: 12px;
   left: 12px;
@@ -25,11 +26,29 @@ html, body, #viewDiv {
   font-family: Arial, sans-serif;
   font-size: 13px;
   box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-  width: 340px;
+  width: 320px;
   border-radius: 10px;
 }
 
-.section { font-weight: bold; margin-top: 10px; }
+/* RIGHT PANEL: Search */
+#controls-right {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: white;
+  padding: 14px;
+  z-index: 99;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  width: 300px;
+  border-radius: 10px;
+}
+
+.section {
+  font-weight: bold;
+  margin-top: 10px;
+}
 
 input[type="text"], select {
   width: 100%;
@@ -53,17 +72,16 @@ input[type="text"], select {
   padding: 6px;
   cursor: pointer;
 }
-.result-item:hover { background: #f0f0f0; }
+.result-item:hover {
+  background: #f0f0f0;
+}
 </style>
 </head>
 
 <body>
 
-<div id="controls">
-
-  <div class="section">Search Dam</div>
-  <input type="text" id="damSearch" placeholder="Type dam name…" />
-  <div id="results"></div>
+<!-- LEFT: Basemap & Layers -->
+<div id="controls-left">
 
   <div class="section">Basemap</div>
   <select id="basemapSelect">
@@ -74,12 +92,19 @@ input[type="text"], select {
   </select>
 
   <div class="section">Layers</div>
-  <label><input type="checkbox" id="stateChk" checked> State Boundary</label>
-  <label><input type="checkbox" id="districtChk"> District Boundary</label>
-  <label><input type="checkbox" id="riverChk"> River</label>
-  <label><input type="checkbox" id="watershedChk"> Watershed</label>
+  <label><input type="checkbox" id="stateChk" checked> State Boundary</label><br>
+  <label><input type="checkbox" id="districtChk"> District Boundary</label><br>
+  <label><input type="checkbox" id="riverChk"> River</label><br>
+  <label><input type="checkbox" id="watershedChk"> Watershed</label><br>
   <label><input type="checkbox" id="damChk" checked> Dams</label>
 
+</div>
+
+<!-- RIGHT: Search -->
+<div id="controls-right">
+  <div class="section">Search Dam</div>
+  <input type="text" id="damSearch" placeholder="Type dam name…" />
+  <div id="results"></div>
 </div>
 
 <div id="viewDiv"></div>
@@ -159,6 +184,25 @@ require([
     extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } }
   });
 
+  /* Toggle bindings */
+  basemapSelect.onchange = () => {
+    map.basemap =
+      basemapSelect.value === "none" ? null :
+      basemapSelect.value === "satellite" ? "satellite" :
+      basemapSelect.value === "streets" ? "streets-vector" :
+      "topo-vector";
+  };
+
+  stateChk.onchange = () => stateLayer.visible = stateChk.checked;
+  districtChk.onchange = () => districtLayer.visible = districtChk.checked;
+  riverChk.onchange = () => riverLayer.visible = riverChk.checked;
+  watershedChk.onchange = () => watershedLayer.visible = watershedChk.checked;
+  damChk.onchange = () => {
+    damLayer.visible = damChk.checked;
+    largeLabelLayer.visible = damChk.checked && view.zoom >= 7;
+    smallLabelLayer.visible = damChk.checked && view.zoom >= 10;
+  };
+
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
     return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
@@ -176,7 +220,6 @@ require([
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
-
       json.data.forEach(dam => {
 
         const lat = dmsToDecimal(dam.Latitude);
@@ -212,7 +255,7 @@ require([
           symbol: new TextSymbol({
             text: wrapLabel(dam.Name_of_Dam),
             color: "orange",
-            font: { size: 7, family: "Arial", weight: "bold" },
+            font: { size: 8, family: "Arial", weight: "bold" },
             yoffset: 8
           })
         });
@@ -231,7 +274,7 @@ require([
     smallLabelLayer.visible = (z >= 10);
   });
 
-  /* Search with smooth zoom */
+  /* Search */
   damSearch.addEventListener("input", function () {
     const q = this.value.toLowerCase();
     results.innerHTML = "";
