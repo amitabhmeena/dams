@@ -14,8 +14,14 @@ html, body, #viewDiv {
   height: 100%;
   width: 100%;
 }
+
 input[type="text"], select {
   box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  margin-top: 6px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
 }
 
 #controls {
@@ -41,14 +47,6 @@ input[type="text"], select {
 
 .section { font-weight: bold; margin-top: 10px; }
 
-input[type="text"], select {
-  width: 100%;
-  padding: 8px;
-  margin-top: 6px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-}
-
 #results {
   max-height: 160px;
   overflow-y: auto;
@@ -61,8 +59,25 @@ input[type="text"], select {
   padding: 6px;
   cursor: pointer;
 }
-.result-item:hover {
-  background: #f0f0f0;
+.result-item:hover,
+.result-item.active {
+  background: #e6e6e6;
+}
+
+.search-wrap {
+  position: relative;
+}
+
+#clearSearch {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  display: none;
 }
 
 @media (max-width: 768px) {
@@ -78,7 +93,10 @@ input[type="text"], select {
   <!-- SEARCH -->
   <div id="search-container">
     <div class="section">Search Dam</div>
-    <input type="text" id="damSearch" placeholder="Type dam name…" />
+    <div class="search-wrap">
+      <input type="text" id="damSearch" placeholder="Type dam name…" />
+      <button id="clearSearch" title="Clear">×</button>
+    </div>
     <div id="results"></div>
   </div>
 
@@ -120,19 +138,13 @@ require([
   MapImageLayer, GraphicsLayer, Graphic, TextSymbol, esriConfig
 ) {
 
-  /* ---------- MOBILE / iOS DETECTION ---------- */
   const isMobile = window.matchMedia("(max-width: 768px)").matches;
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const controls = document.getElementById("controls");
 
-  function collapse() {
-    if (isMobile || isIOS) controls.classList.add("collapsed");
-  }
-  function expand() {
-    if (isMobile || isIOS) controls.classList.remove("collapsed");
-  }
+  function collapse() { if (isMobile || isIOS) controls.classList.add("collapsed"); }
+  function expand() { if (isMobile || isIOS) controls.classList.remove("collapsed"); }
 
-  /* ---------- TOKEN INTERCEPTOR ---------- */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
     before: p => {
@@ -149,7 +161,6 @@ require([
     }
   });
 
-  /* ---------- LAYERS ---------- */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
     visible: true
@@ -177,13 +188,8 @@ require([
   const map = new Map({
     basemap: "satellite",
     layers: [
-      stateLayer,
-      districtLayer,
-      riverLayer,
-      watershedLayer,
-      damLayer,
-      largeLabelLayer,
-      smallLabelLayer
+      stateLayer, districtLayer, riverLayer, watershedLayer,
+      damLayer, largeLabelLayer, smallLabelLayer
     ]
   });
 
@@ -193,22 +199,17 @@ require([
     extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } },
     popup: {
       dockEnabled: true,
-      dockOptions: {
-        position: "top-right",
-        breakpoint: false
-      }
+      dockOptions: { position: "top-right", breakpoint: false }
     }
   });
 
-  /* Collapse controls on map interaction (Safari safe) */
   view.on("drag", collapse);
   view.on("mouse-wheel", collapse);
   view.on("click", collapse);
   view.on("pointer-down", collapse);
   view.on("touchstart", collapse);
-  document.getElementById("damSearch").addEventListener("focus", expand);
+  damSearch.addEventListener("focus", expand);
 
-  /* ---------- TOGGLES ---------- */
   basemapSelect.onchange = () => {
     map.basemap =
       basemapSelect.value === "none" ? null :
@@ -228,7 +229,6 @@ require([
     smallLabelLayer.visible = damChk.checked && view.zoom >= 10;
   };
 
-  /* ---------- UTILITIES ---------- */
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
     return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
@@ -242,8 +242,9 @@ require([
   }
 
   const damGraphics = [];
+  let currentMatches = [];
+  let activeIndex = -1;
 
-  /* ---------- LOAD DAMS ---------- */
   fetch("dams.json")
     .then(r => r.json())
     .then(json => {
@@ -292,43 +293,81 @@ require([
       });
     });
 
-  /* ---------- ZOOM-BASED LABEL VISIBILITY ---------- */
   view.watch("zoom", z => {
     largeLabelLayer.visible = (z >= 7 && damChk.checked);
     smallLabelLayer.visible = (z >= 10 && damChk.checked);
   });
 
-  /* ---------- SEARCH ---------- */
+  function selectDam(index) {
+    const g = currentMatches[index];
+    if (!g) return;
+
+    results.style.display = "none";
+    damSearch.value = g.attributes.Name_of_Dam;
+    clearSearch.style.display = "block";
+    activeIndex = -1;
+
+    view.popup.close();
+    view.goTo({ target: g.geometry, zoom: 11 }, { duration: 2000 });
+    view.popup.open({ features: [g], location: g.geometry });
+  }
+
   damSearch.addEventListener("input", function () {
     const q = this.value.toLowerCase();
     results.innerHTML = "";
     results.style.display = "none";
+    activeIndex = -1;
+    currentMatches = [];
+
+    clearSearch.style.display = q ? "block" : "none";
     if (!q) return;
 
-    const matches = damGraphics
+    currentMatches = damGraphics
       .filter(g => g.attributes.Name_of_Dam.toLowerCase().includes(q))
       .slice(0, 10);
 
-    if (!matches.length) return;
+    if (!currentMatches.length) return;
 
     results.style.display = "block";
-    matches.forEach(g => {
+
+    currentMatches.forEach((g, idx) => {
       const div = document.createElement("div");
       div.className = "result-item";
       div.textContent = g.attributes.Name_of_Dam;
-      div.onclick = () => {
-        results.style.display = "none";
-        damSearch.value = g.attributes.Name_of_Dam;
-        view.popup.close();
-        view.goTo({ target: g.geometry, zoom: 11 }, { duration: 2000 });
-        view.popup.open({
-          features: [g],
-          location: g.geometry
-        });
-      };
+      div.onclick = () => selectDam(idx);
       results.appendChild(div);
     });
   });
+
+  damSearch.addEventListener("keydown", function (e) {
+    if (!currentMatches.length) return;
+    const items = results.children;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIndex = (activeIndex + 1) % items.length;
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIndex = (activeIndex - 1 + items.length) % items.length;
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (activeIndex >= 0) selectDam(activeIndex);
+      return;
+    }
+
+    [...items].forEach((el, i) => {
+      el.classList.toggle("active", i === activeIndex);
+    });
+  });
+
+  clearSearch.onclick = () => {
+    damSearch.value = "";
+    results.style.display = "none";
+    currentMatches = [];
+    activeIndex = -1;
+    clearSearch.style.display = "none";
+    view.popup.close();
+  };
 
 });
 </script>
