@@ -90,17 +90,15 @@ input[type="text"], select {
 
 <div id="controls">
 
-  <!-- SEARCH -->
   <div id="search-container">
     <div class="section">Search Dam</div>
     <div class="search-wrap">
       <input type="text" id="damSearch" placeholder="Type dam name…" />
-      <button id="clearSearch" title="Clear">×</button>
+      <button id="clearSearch">×</button>
     </div>
     <div id="results"></div>
   </div>
 
-  <!-- TOGGLES -->
   <div id="toggle-container">
 
     <div class="section">Basemap</div>
@@ -119,7 +117,6 @@ input[type="text"], select {
     <label><input type="checkbox" id="damChk" checked> Dams</label>
 
   </div>
-
 </div>
 
 <div id="viewDiv"></div>
@@ -145,6 +142,7 @@ require([
   function collapse() { if (isMobile || isIOS) controls.classList.add("collapsed"); }
   function expand() { if (isMobile || isIOS) controls.classList.remove("collapsed"); }
 
+  /* ---- ESRI TOKENS ---- */
   esriConfig.request.interceptors.push({
     urls: /mapservice\.gov\.in/,
     before: p => {
@@ -161,6 +159,7 @@ require([
     }
   });
 
+  /* ---- LAYERS ---- */
   const stateLayer = new MapImageLayer({
     url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
     visible: true
@@ -185,11 +184,6 @@ require([
   const largeLabelLayer = new GraphicsLayer({ visible: false });
   const smallLabelLayer = new GraphicsLayer({ visible: false });
 
-  const blankBasemap = {
-  baseLayers: [],
-  referenceLayers: []
-};
-
   const map = new Map({
     basemap: "satellite",
     layers: [
@@ -202,12 +196,29 @@ require([
     container: "viewDiv",
     map,
     extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } },
-    popup: {
-      dockEnabled: true,
-      dockOptions: { position: "top-right", breakpoint: false }
-    }
+    popup: { dockEnabled: true, dockOptions: { position: "top-right", breakpoint: false } }
   });
 
+  /* ---- FIX: NO BASEMAP MODE (TRANSPARENT REFERENCE BASEMAP) ---- */
+  const referenceBasemap = "gray-vector";
+
+  basemapSelect.onchange = () => {
+    if (basemapSelect.value === "none") {
+      map.basemap = referenceBasemap;
+      map.basemap.baseLayers.forEach(l => l.opacity = 0);
+    } else {
+      map.basemap =
+        basemapSelect.value === "satellite" ? "satellite" :
+        basemapSelect.value === "streets" ? "streets-vector" :
+        "topo-vector";
+    }
+  };
+
+  map.watch("basemap", () => {
+    map.basemap?.baseLayers?.forEach(l => l.opacity = 1);
+  });
+
+  /* ---- MOBILE COLLAPSE ---- */
   view.on("drag", collapse);
   view.on("mouse-wheel", collapse);
   view.on("click", collapse);
@@ -215,15 +226,7 @@ require([
   view.on("touchstart", collapse);
   damSearch.addEventListener("focus", expand);
 
-  basemapSelect.onchange = () => {
-  map.basemap =
-    basemapSelect.value === "none" ? blankBasemap :
-    basemapSelect.value === "satellite" ? "satellite" :
-    basemapSelect.value === "streets" ? "streets-vector" :
-    "topo-vector";
-};
-
-
+  /* ---- TOGGLES ---- */
   stateChk.onchange = () => stateLayer.visible = stateChk.checked;
   districtChk.onchange = () => districtLayer.visible = districtChk.checked;
   riverChk.onchange = () => riverLayer.visible = riverChk.checked;
@@ -235,6 +238,7 @@ require([
     smallLabelLayer.visible = damChk.checked && view.zoom >= 10;
   };
 
+  /* ---- UTILS ---- */
   function dmsToDecimal(dms) {
     const p = dms?.match(/\d+/g);
     return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
@@ -262,7 +266,6 @@ require([
 
         const storage = Number(dam["Gross Storage Capacity(mcm)"]);
         const isLarge = (!isNaN(storage) && storage >= 500);
-        const symbolSize = isLarge ? 5 : 2;
 
         const g = new Graphic({
           geometry: { type: "point", latitude: lat, longitude: lon },
@@ -270,7 +273,7 @@ require([
           symbol: {
             type: "simple-marker",
             color: [0,102,204,0.9],
-            size: symbolSize,
+            size: isLarge ? 5 : 2,
             outline: null
           },
           popupTemplate: {
@@ -294,8 +297,7 @@ require([
           })
         });
 
-        if (isLarge) largeLabelLayer.add(labelGraphic);
-        else smallLabelLayer.add(labelGraphic);
+        isLarge ? largeLabelLayer.add(labelGraphic) : smallLabelLayer.add(labelGraphic);
       });
     });
 
@@ -303,77 +305,6 @@ require([
     largeLabelLayer.visible = (z >= 7 && damChk.checked);
     smallLabelLayer.visible = (z >= 10 && damChk.checked);
   });
-
-  function selectDam(index) {
-    const g = currentMatches[index];
-    if (!g) return;
-
-    results.style.display = "none";
-    damSearch.value = g.attributes.Name_of_Dam;
-    clearSearch.style.display = "block";
-    activeIndex = -1;
-
-    view.popup.close();
-    view.goTo({ target: g.geometry, zoom: 11 }, { duration: 2000 });
-    view.popup.open({ features: [g], location: g.geometry });
-  }
-
-  damSearch.addEventListener("input", function () {
-    const q = this.value.toLowerCase();
-    results.innerHTML = "";
-    results.style.display = "none";
-    activeIndex = -1;
-    currentMatches = [];
-
-    clearSearch.style.display = q ? "block" : "none";
-    if (!q) return;
-
-    currentMatches = damGraphics
-      .filter(g => g.attributes.Name_of_Dam.toLowerCase().includes(q))
-      .slice(0, 10);
-
-    if (!currentMatches.length) return;
-
-    results.style.display = "block";
-
-    currentMatches.forEach((g, idx) => {
-      const div = document.createElement("div");
-      div.className = "result-item";
-      div.textContent = g.attributes.Name_of_Dam;
-      div.onclick = () => selectDam(idx);
-      results.appendChild(div);
-    });
-  });
-
-  damSearch.addEventListener("keydown", function (e) {
-    if (!currentMatches.length) return;
-    const items = results.children;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      activeIndex = (activeIndex + 1) % items.length;
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      activeIndex = (activeIndex - 1 + items.length) % items.length;
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (activeIndex >= 0) selectDam(activeIndex);
-      return;
-    }
-
-    [...items].forEach((el, i) => {
-      el.classList.toggle("active", i === activeIndex);
-    });
-  });
-
-  clearSearch.onclick = () => {
-    damSearch.value = "";
-    results.style.display = "none";
-    currentMatches = [];
-    activeIndex = -1;
-    clearSearch.style.display = "none";
-    view.popup.close();
-  };
 
 });
 </script>
