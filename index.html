@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+<title>Specified dams - India</title>
+
+<link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+<script src="https://js.arcgis.com/4.29/"></script>
+
+<style>
+  html, body, #viewDiv {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+}
+
+/* ───────── Controls panel ───────── */
+#controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: white;
+  padding: 14px;
+  z-index: 99;
+  font-size: 13px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  width: 340px;
+  border-radius: 10px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  transition: transform 0.3s ease;
+}
+
+/* Collapsed on mobile */
+#controls.collapsed {
+  transform: translateY(-92%);
+}
+
+/* Inputs */
+input[type="text"], select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 16px; /* iOS zoom fix */
+}
+
+.section {
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+/* Search results */
+#results {
+  max-height: 35vh;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  display: none;
+}
+
+.result-item {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.result-item:hover,
+.result-item.active {
+  background: #e6e6e6;
+}
+
+/* Clear button */
+.search-wrap {
+  position: relative;
+}
+
+#clearSearch {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+  display: none;
+}
+
+/* ───────── Mobile specific ───────── */
+@media (max-width: 768px) {
+
+  #controls {
+    width: 94%;
+    left: 3%;
+    top: auto;
+    bottom: 12px;
+    border-radius: 14px;
+  }
+
+  #controls.collapsed {
+    transform: translateY(calc(100% - 42px));
+  }
+}
+
+</style>
+
+</head>
+<body>
+
+<div id="controls">
+
+  <!-- SEARCH -->
+  <div id="search-container">
+    <div class="section">Search Dam</div>
+    <div class="search-wrap">
+      <input type="text" id="damSearch" placeholder="Type dam name…" />
+      <button id="clearSearch" title="Clear">×</button>
+    </div>
+    <div id="results"></div>
+  </div>
+
+  <!-- TOGGLES -->
+  <div id="toggle-container">
+
+    <div class="section">Basemap</div>
+    <select id="basemapSelect">
+      <option value="satellite" selected>Satellite</option>
+	  <option value="hybrid">Hybrid (Satellite + Labels)</option>
+      <option value="topo">Topographic</option>
+      <option value="streets">Street</option>
+      <option value="none">No basemap</option>
+    </select>
+
+    <div class="section">Layers</div>
+    <label><input type="checkbox" id="stateChk" checked> State Boundary</label><br>
+    <label><input type="checkbox" id="districtChk"> District Boundary</label><br>
+    <label><input type="checkbox" id="riverChk"> River</label><br>
+    <label><input type="checkbox" id="riverBasinsChk"> River Basins</label><br>
+    <label><input type="checkbox" id="damChk" checked> Dams</label><br>
+    <label><input type="checkbox" id="hoChk"> HO Sites</label>
+
+
+  </div>
+
+</div>
+
+<div id="viewDiv"></div>
+
+<script>
+  
+  const worldLocator =
+  "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer";
+
+require([
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/MapImageLayer",
+  "esri/layers/FeatureLayer",
+  "esri/Graphic",
+  "esri/geometry/Point",
+  "esri/widgets/ScaleBar",
+  "esri/rest/locator",
+  "esri/config"
+], function (
+  Map, MapView,
+  MapImageLayer, FeatureLayer,
+  Graphic, Point, ScaleBar, locator, esriConfig
+) {
+  esriConfig.apiKey = "AAPTxy8BH1VEsoebNVZXo8HurKdAwSbr3tap2eaxJY7Eqwza-FGiC6bjE-hhpBRvGJ2wDnbvdmPI7YFWeiNXNv6su9s4lbgk8V_8AF7vUtQTkgI-5EA5YPbRJgTLnU8DP1qJCTztP8XktMd0xQu99qfTENAzYFXEPc1D-dx7joWwLUqLNFt7ApWKCXPbopJ8oAlWK3wspWKMg0OiMyOmtpo6N0u2d3K5vNHQ_uobPl467zg.AT1_oPY0JXcr";
+
+
+  const results = document.getElementById("results");
+  
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const controls = document.getElementById("controls");
+  
+
+  function collapse() { if (isMobile || isIOS) controls.classList.add("collapsed"); }
+  function expand() { if (isMobile || isIOS) controls.classList.remove("collapsed"); }
+
+  esriConfig.request.interceptors.push({
+    urls: /mapservice\.gov\.in/,
+    before: p => {
+      p.requestOptions.query = p.requestOptions.query || {};
+      const u = p.url;
+      if (u.includes("State_Boundary"))
+        p.requestOptions.query.token = "B_MvXZQQA3UJQ3rriTr7Qvo4AE-8f2v0JmAgH3h17-3OVcp7agXot9jS8Q7ZPelzaaShzPs5CR7tqOeucn4Oww..";
+      else if (u.includes("District_Boundary"))
+        p.requestOptions.query.token = "KLafX5W7tKxU3qXCTtWzmiub5IsvSYcYf8OYVbFZaO_5Dlji_67_mzrUu6qCgWJ6djeLy_izw-rxbEWms3Ss0g..";
+      else if (u.includes("River"))
+        p.requestOptions.query.token = "aprsZsvhLhQlrHeo2O-9F-PWMUmaTr7awaxuyKOXtWOMMp0VVG70sfDnNltnsh3SLOqcK8zLNCvPqBThYxn5tw..";
+      else if (u.includes("River Basins"))
+        p.requestOptions.query.token = "LYFmEZL-IKy3-iAuFBbGMpNs0rPaWFMD5KuaJUT7I6OFXUWRxnUhDjR3SJfE-ndgh9aAdyua9Cs8b9POB7R51Q..";
+    }
+  });
+
+  const stateLayer = new MapImageLayer({
+    url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/State_Boundary/MapServer",
+    visible: true
+  });
+
+  const districtLayer = new MapImageLayer({
+    url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/District_Boundary/MapServer",
+    visible: false
+  });
+
+  const riverLayer = new MapImageLayer({
+    url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/River/MapServer",
+    visible: false
+  });
+
+  /* const riverBasinsLayer = new MapImageLayer({
+    url: "https://mapservice.gov.in/gismapservice/rest/services/BharatMapService/Watershed/MapServer",
+    visible: false
+  }); */
+  
+  
+
+  // ──────────────────────────────────────────────────────────────
+  //  FeatureLayer for Dams (points + labels)
+  // ──────────────────────────────────────────────────────────────
+  let damFeatureLayer;
+
+  const map = new Map({
+    basemap: "satellite",
+    layers: [stateLayer, districtLayer, riverLayer]
+  });
+
+  const view = new MapView({
+    container: "viewDiv",
+    map,
+    extent: { xmin: 68, ymin: 6, xmax: 97, ymax: 37, spatialReference: { wkid: 4326 } },
+    
+    popup: isMobile || isIOS
+  ? {
+      dockEnabled: false
+    }
+  : {
+      dockEnabled: true,
+      dockOptions: {
+        position: "top-right",
+        breakpoint: false
+      }
+    }
+
+
+  });
+
+  if (isMobile || isIOS) {
+  controls.classList.add("collapsed");
+
+  controls.addEventListener("click", e => {
+    e.stopPropagation();
+    controls.classList.remove("collapsed");
+  });
+
+  view.on("click", () => {
+    controls.classList.add("collapsed");
+  });
+}
+
+  // Feature layer for dams
+  const riverBasinsLabeling = [
+  {
+    labelExpressionInfo: {
+  expression: `
+    When(
+      $feature.BA_NAME == 'West flowing rivers of Kutch and Saurashtra including Luni Basin',
+      'West flowing rivers\\n of Kutch and Saurashtra\\n including Luni Basin',
+
+      $feature.BA_NAME == 'West flowing rivers from Tapi to Tadri Basin',
+      'West flowing rivers\\nfrom Tapi to Tadri Basin',
+
+      $feature.BA_NAME == 'West flowing rivers from Tadri to Kanyakumari Basin',
+      'West flowing rivers\\nfrom Tadri to Kanyakumari Basin',
+
+      $feature.BA_NAME == 'Minor rivers draining into Myanmar and Bangladesh Basin',
+      'Minor rivers draining into\\nMyanmar and Bangladesh Basin',
+
+      $feature.BA_NAME == 'East flowing rivers between Pennar and Kanyakumari Basin',
+      'East flowing rivers\\nbetween Pennar and Kanyakumari Basin',
+
+      $feature.BA_NAME == 'East flowing rivers between Mahanadi and Pennar Basin',
+      'East flowing rivers\\nbetween Mahanadi and Pennar Basin',
+
+      $feature.BA_NAME == 'Area of Inland drainage in Rajasthan Basin',
+      'Area of Inland drainage\\nin Rajasthan Basin',
+
+      Proper($feature.BA_NAME)
+    )
+  `
+},
+    labelPlacement: "polygon-center",
+    minScale: 15000000,   // show from country level
+    maxScale: 0,
+    symbol: {
+      type: "text",
+      color: [120, 200, 200, 0.9],
+      haloColor: [0, 0, 0, 0.9],
+      haloSize: "1.5px",
+      font: {
+        family: "Arial",
+        size: 10,
+        weight: "bold"
+      }
+    }
+  }
+];
+
+
+  let riverBasinsLayer;
+
+fetch("river-basins.geojson")
+  .then(r => r.json())
+  .then(geojson => {
+
+    const features = [];
+
+geojson.features.forEach((f, i) => {
+  if (!f.geometry) return;
+
+  if (f.geometry.type === "Polygon") {
+    features.push({
+      geometry: {
+        type: "polygon",
+        rings: f.geometry.coordinates,
+        spatialReference: { wkid: 4326 }
+      },
+      attributes: { OBJECTID: i + 1, ...f.properties }
+    });
+  }
+
+  if (f.geometry.type === "MultiPolygon") {
+    f.geometry.coordinates.forEach((poly, j) => {
+      features.push({
+        geometry: {
+          type: "polygon",
+          rings: poly,
+          spatialReference: { wkid: 4326 }
+        },
+        attributes: { OBJECTID: i * 1000 + j, ...f.properties }
+      });
+    });
+  }
+});
+
+
+    const fields = Object.keys(features[0].attributes).map(k => ({
+      name: k,
+      alias: k.replace(/_/g, " "),
+      type: k === "OBJECTID" ? "oid" : "string"
+    }));
+
+    riverBasinsLayer = new FeatureLayer({
+      source: features,
+      objectIdField: "OBJECTID",
+      geometryType: "polygon",
+      spatialReference: { wkid: 4326 },
+      fields: fields,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-fill",
+          color: [0, 0, 0, 0],
+          outline: {
+            color: [120, 200, 200, 0.9],
+            width: 1.2
+          }
+        }
+      },
+      labelingInfo: riverBasinsLabeling,
+	    labelsVisible: true,
+	    visible: false,
+      title: "River Basins"
+    });
+
+    map.add(riverBasinsLayer, 0);
+
+    riverBasinsChk.onchange = () => {
+      riverBasinsLayer.visible = riverBasinsChk.checked;
+    };
+  });
+
+  // feature layer for ho sites
+  let hoFeatureLayer;
+
+fetch("ho-sites.geojson")
+  .then(r => r.json())
+  .then(geojson => {
+
+    const features = geojson.features.map((f, i) => ({
+      geometry: new Point({
+        longitude: f.geometry.coordinates[0],
+        latitude: f.geometry.coordinates[1],
+        spatialReference: { wkid: 4326 }
+      }),
+      attributes: {
+        OBJECTID: i + 1,
+        ...f.properties
+      }
+    }));
+
+    if (!features.length) return;
+
+    const fields = Object.keys(features[0].attributes).map(k => ({
+      name: k,
+      alias: k.replace(/_/g, " "),
+      type: k === "OBJECTID" ? "oid" : "string"
+    }));
+
+    hoFeatureLayer = new FeatureLayer({
+      source: features,
+      objectIdField: "OBJECTID",
+      geometryType: "point",
+      spatialReference: { wkid: 4326 },
+      fields: fields,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "simple-marker",
+          color: [220, 20, 60, 0.9],   // crimson red
+          size: 4
+          // outline: {
+          //  color: [255, 255, 255],
+          //  width: 1
+         // }
+        }
+      },
+      popupTemplate: {
+        title: "HO Site",
+        content: [
+          {
+            type: "fields",
+            fieldInfos: fields
+              .filter(f => f.name !== "OBJECTID")
+              .map(f => ({
+                fieldName: f.name,
+                label: f.alias
+              }))
+          }
+        ]
+      },
+      visible: false
+    });
+
+    map.add(hoFeatureLayer);
+
+    // Checkbox toggle
+    hoChk.onchange = () => {
+      hoFeatureLayer.visible = hoChk.checked;
+    };
+
+  })
+  .catch(err => console.error("Failed to load ho-sites.geojson", err));
+
+
+  const scaleBar = new ScaleBar({
+  view: view,
+  unit: "metric"
+});
+
+view.ui.add(scaleBar, {
+  position: "bottom-right"
+});
+
+
+  if (!isMobile && !isIOS) {
+  view.on("drag", collapse);
+  view.on("mouse-wheel", collapse);
+}
+
+   damSearch.addEventListener("focus", expand);
+
+  basemapSelect.onchange = () => {
+    map.basemap =
+      basemapSelect.value === "none" ? null :
+      basemapSelect.value === "satellite" ? "satellite" :
+	  basemapSelect.value === "hybrid" ? "hybrid" :
+      basemapSelect.value === "streets" ? "streets-vector" :
+      "topo-vector";
+  };
+
+  stateChk.onchange = () => stateLayer.visible = stateChk.checked;
+  districtChk.onchange = () => districtLayer.visible = districtChk.checked;
+  riverChk.onchange = () => riverLayer.visible = riverChk.checked;
+  riverBasinsChk.onchange = () => riverBasinsLayer.visible = riverBasinsChk.checked;
+
+  damChk.onchange = () => {
+    if (damFeatureLayer) damFeatureLayer.visible = damChk.checked;
+  };
+
+  function dmsToDecimal(dms) {
+    const p = dms?.match(/\d+/g);
+    return p ? (+p[0] + p[1]/60 + (p[2]||0)/3600) : null;
+  }
+
+  // Load dams → create FeatureLayer once
+  fetch("dams.json")
+    .then(r => r.json())
+    .then(json => {
+      const features = [];
+
+      json.data.forEach((dam, index) => {
+        const lat = dmsToDecimal(dam.Latitude);
+        const lon = dmsToDecimal(dam.Longitude);
+        if (!lat || !lon) return;
+
+        const point = new Point({
+          longitude: lon,
+          latitude: lat,
+          spatialReference: { wkid: 4326 }
+        });
+
+        features.push({
+          geometry: point,
+          attributes: {
+            OBJECTID: index + 1,
+            Name_of_Dam: dam.Name_of_Dam || "Unknown",
+            ...dam  // keep all other fields for popup
+          }
+        });
+      });
+
+      // ── Renderer (simple marker, size based on storage) ───────────────
+      const renderer = {
+        type: "simple",
+        symbol: {
+          type: "simple-marker",
+          color: [0, 102, 204, 0.9],
+          size: 6,
+          outline: null
+        },
+        visualVariables: [{
+          type: "size",
+          field: "Gross Storage Capacity(mcm)",
+          valueExpression: "$feature['Gross Storage Capacity(mcm)']",
+          stops: [
+            { value: 0,   size: 3 },
+            { value: 500, size: 6 }
+          ],
+          legendOptions: { title: "Storage (MCM)" }
+        }]
+      };
+
+      // ── Labeling (robust even without basemap) ────────────────────────
+      const labelingInfo = [
+
+  /* ==============================
+     RULE 1: ALL DAMS (large zoom)
+     Scale: 0 to 1:500,000
+  ============================== */
+  {
+    labelExpressionInfo: {
+      expression: `
+        Proper($feature.Name_of_Dam)
+      `
+    },
+    minScale: 500000,
+    maxScale: 0,
+    labelPlacement: "above-center",
+    symbol: {
+      type: "text",
+      color: [255, 180, 90],
+      // haloColor: [0, 0, 0, 0.9],
+      // haloSize: "1.5px",
+      font: {
+        size: 10,
+        family: "Arial",
+        weight: "bold"
+      },
+      yoffset: 10
+    }
+  },
+
+  /* =========================================
+     RULE 2: ONLY DAMS >= 500 MCM (mid zoom)
+     Scale: 1:500,000 to 1:5,000,000
+  ========================================= */
+  {
+    labelExpressionInfo: {
+      expression: `
+        IIf(
+          Number($feature["Gross Storage Capacity(mcm)"]) >= 500,
+          Proper($feature.Name_of_Dam),
+          ""
+        )
+      `
+    },
+    minScale: 5000000,
+    maxScale: 500000,
+    labelPlacement: "above-center",
+    symbol: {
+      type: "text",
+      color: [255, 180, 0],
+      // haloColor: [0, 0, 0, 0.9],
+      // haloSize: "1.5px",
+      font: {
+        size: 10,
+        family: "Arial",
+        weight: "bold"
+      },
+      yoffset: 10
+    }
+  }
+
+];
+
+      // ── AUTO-GENERATE FIELDS FROM JSON ATTRIBUTES ─────────────
+const sampleAttrs = features[0].attributes;
+
+const fields = Object.keys(sampleAttrs).map(key => ({
+  name: key,
+  alias: key.replace(/_/g, " "),
+  type: typeof sampleAttrs[key] === "number" ? "double" : "string"
+}));
+
+// Ensure OBJECTID is correct
+const oidField = fields.find(f => f.name === "OBJECTID");
+if (oidField) oidField.type = "oid";
+
+
+      damFeatureLayer = new FeatureLayer({
+        source: features,
+        objectIdField: "OBJECTID",
+        geometryType: "point",
+        spatialReference: { wkid: 4326 },
+        fields: fields,
+        renderer: renderer,
+        labelingInfo: labelingInfo,
+        visible: true,
+        popupTemplate: {
+          title: "{Name_of_Dam}",
+          content: [
+            {
+              type: "fields",
+              fieldInfos: Object.keys(features[0]?.attributes || {})
+                .filter(k => k !== "OBJECTID")
+                .map(field => ({ fieldName: field, label: field.replace(/_/g, " ") }))
+            }
+          ]
+        }
+      });
+
+      map.add(damFeatureLayer);
+
+      // Enable/disable with checkbox
+      damChk.onchange = () => {
+        damFeatureLayer.visible = damChk.checked;
+      };
+    })
+    .catch(err => console.error("Failed to load dams.json", err));
+
+  // ── Search functionality (updated for case-insensitivity and more results) ────────────────────────────
+  let currentMatches = [];
+  let activeIndex = -1;
+
+  damSearch.addEventListener("input", function () {
+    const q = this.value.toLowerCase().trim();
+    results.innerHTML = "";
+    results.style.display = "none";
+    activeIndex = -1;
+    currentMatches = [];
+
+    document.getElementById("clearSearch").style.display = q ? "block" : "none";
+    if (!q || !damFeatureLayer) return;
+
+    // Query the FeatureLayer instead of graphics
+    damFeatureLayer.queryFeatures({
+      where: `LOWER(Name_of_Dam) LIKE '%${q.replace(/'/g, "''")}%'`,
+      outFields: ["*"],
+      returnGeometry: true,
+      orderByFields: ["Name_of_Dam ASC"],
+      num: 100  // Increased limit to ensure more dams are found if matching
+    }).then(response => {
+      currentMatches = response.features;
+      if (!currentMatches.length) return;
+
+      results.style.display = "block";
+
+      currentMatches.forEach((feature, idx) => {
+        const div = document.createElement("div");
+        div.className = "result-item";
+        div.textContent = feature.attributes.Name_of_Dam;
+        div.onclick = () => selectDam(idx);
+        results.appendChild(div);
+      });
+    });
+  });
+
+  damSearch.addEventListener("keydown", function (e) {
+
+  const items = results.children;
+
+  // Arrow navigation (unchanged behavior)
+  if (e.key === "ArrowDown" && items.length) {
+    e.preventDefault();
+    activeIndex = (activeIndex + 1) % items.length;
+  }
+  else if (e.key === "ArrowUp" && items.length) {
+    e.preventDefault();
+    activeIndex = (activeIndex - 1 + items.length) % items.length;
+  }
+
+  // ENTER key logic (HYBRID)
+  else if (e.key === "Enter") {
+    e.preventDefault();
+
+    // Case 1: Dam selected from dropdown
+    if (activeIndex >= 0 && currentMatches.length) {
+      selectDam(activeIndex);
+      return;
+    }
+
+    // Case 2: No dam selected → geocode
+    const query = damSearch.value.trim();
+    if (!query) return;
+
+    locator.addressToLocations(worldLocator, {
+      address: { SingleLine: query },
+      maxLocations: 1,
+      countryCode: "IND"
+    }).then(results => {
+
+      if (!results.length) {
+        alert("Location not found");
+        return;
+      }
+
+      const loc = results[0];
+
+      view.popup.close();
+
+      view.goTo({
+        target: loc.location,
+        zoom: 10
+      }, { duration: 2000 }).then(() => {
+        view.popup.open({
+          title: loc.address,
+          location: loc.location,
+          content: "Location searched using ArcGIS Geocoding"
+        });
+      });
+
+    }).catch(err => {
+      console.error("Geocoding error", err);
+    });
+  }
+
+  // Highlight dropdown item
+  [...items].forEach((el, i) => {
+    el.classList.toggle("active", i === activeIndex);
+  });
+
+});
+
+  function selectDam(index) {
+    const feature = currentMatches[index];
+    if (!feature) return;
+
+    document.getElementById("results").style.display = "none";
+    damSearch.value = feature.attributes.Name_of_Dam;
+    document.getElementById("clearSearch").style.display = "block";
+    activeIndex = -1;
+
+    view.popup.close();
+    view.goTo({ target: feature.geometry, zoom: 11 }, { duration: 2000 })
+      .then(() => {
+        view.popup.open({
+          features: [feature],
+          location: feature.geometry
+        });
+      });
+  }
+
+  document.getElementById("clearSearch").onclick = () => {
+    damSearch.value = "";
+    document.getElementById("results").style.display = "none";
+    currentMatches = [];
+    activeIndex = -1;
+    document.getElementById("clearSearch").style.display = "none";
+    view.popup.close();
+  };
+
+});
+</script>
+
+</body>
+</html>
