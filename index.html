@@ -280,36 +280,29 @@ require([
   const riverBasinsLabeling = [
   {
     labelExpressionInfo: {
-  expression: `
-    IIf(
-      Trim($feature.BA_NAME) == 'Island',
-      '',
+   expression: `
+    When(
+      $feature.BA_NAME == 'West flowing rivers of Kutch and Saurashtra including Luni Basin',
+      'West flowing rivers\\n of Kutch and Saurashtra\\n including Luni Basin',
 
-      // 3-line wrapping for very long west-flowing names
-      Replace(
-        Replace(
-          Replace(
-            Replace(
-              Proper($feature.BA_NAME),
+      $feature.BA_NAME == 'West flowing rivers from Tapi to Tadri Basin',
+      'West flowing rivers\\nfrom Tapi to Tadri Basin',
 
-              // LINE 1 → LINE 2
-              ' rivers of ',
-              ' rivers\\nof '
-            ),
+      $feature.BA_NAME == 'West flowing rivers from Tadri to Kanyakumari Basin',
+      'West flowing rivers\\nfrom Tadri to Kanyakumari Basin',
 
-            // LINE 2 → LINE 3
-            ' including ',
-            '\\nincluding '
-          ),
+      $feature.BA_NAME == 'Minor rivers draining into Myanmar and Bangladesh Basin',
+      'Minor rivers draining into\\nMyanmar and Bangladesh Basin',
 
-          // generic 2-line cases
-          ' between ',
-          '\\nbetween '
-        ),
+      $feature.BA_NAME == 'East flowing rivers between Pennar and Kanyakumari Basin',
+      'East flowing rivers\\nbetween Pennar and Kanyakumari Basin',
 
-        ' South of ',
-        '\\nSouth of '
-      )
+      $feature.BA_NAME == 'East flowing rivers between Mahanadi and Pennar Basin',
+      'East flowing rivers\\nbetween Mahanadi and Pennar Basin',
+
+      $feature.BA_NAME == 'Area of Inland drainage in Rajasthan Basin',
+      'Area of Inland drainage\\nin Rajasthan Basin',
+
     )
   `
 },
