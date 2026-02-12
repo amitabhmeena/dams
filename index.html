@@ -175,12 +175,13 @@ require([
   "esri/Graphic",
   "esri/geometry/Point",
   "esri/widgets/ScaleBar",
+  "esri/widgets/Locate",
   "esri/rest/locator",
   "esri/config"
 ], function (
   Map, MapView,
   MapImageLayer, FeatureLayer,
-  Graphic, Point, ScaleBar, locator, esriConfig
+  Graphic, Point, ScaleBar, locate, locator, esriConfig
 ) {
   esriConfig.apiKey = "AAPTxy8BH1VEsoebNVZXo8HurKdAwSbr3tap2eaxJY7Eqwza-FGiC6bjE-hhpBRvGJ2wDnbvdmPI7YFWeiNXNv6su9s4lbgk8V_8AF7vUtQTkgI-5EA5YPbRJgTLnU8DP1qJCTztP8XktMd0xQu99qfTENAzYFXEPc1D-dx7joWwLUqLNFt7ApWKCXPbopJ8oAlWK3wspWKMg0OiMyOmtpo6N0u2d3K5vNHQ_uobPl467zg.AT1_oPY0JXcr";
 
@@ -262,6 +263,20 @@ require([
 
 
   });
+
+  // locate
+const locateWidget = new Locate({
+  view: view,
+  useHeadingEnabled: false,
+  goToOverride: function(view, options) {
+    options.target.scale = 50000; // zoom level when locating
+    return view.goTo(options.target);
+  }
+});
+
+// Add to UI
+view.ui.add(locateWidget, "top-right");
+	
 
   if (isMobile || isIOS) {
   controls.classList.add("collapsed");
