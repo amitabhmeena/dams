@@ -268,13 +268,20 @@ require([
 const locateWidget = new Locate({
   view: view,
   useHeadingEnabled: false,
-  goToOverride: function(view, options) {
-    options.target.scale = 50000; // zoom level when locating
-    return view.goTo(options.target);
+  goToOverride: function (view, options) {
+    return view.goTo(
+      {
+        target: options.target.target || options.target,
+        scale: 50000
+      },
+      {
+        duration: 2000,   // ✅ SAME speed as dam search
+        easing: "ease-in-out"
+      }
+    );
   }
 });
 
-// Add to UI
 view.ui.add(locateWidget, "top-right");
 	
 
