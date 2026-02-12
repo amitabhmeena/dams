@@ -271,7 +271,7 @@ const locateWidget = new Locate({
   goToOverride: function (view, options) {
     return view.goTo(
       {
-        target: options.target,
+        target: options.target.target || options.target,
         scale: 100000
       },
       {
