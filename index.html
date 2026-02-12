@@ -705,11 +705,7 @@ if (oidField) oidField.type = "oid";
 
     // Query the FeatureLayer instead of graphics
     damFeatureLayer.queryFeatures({
-      where: `
-      LOWER(Name_of_Dam) LIKE '%${q.replace(/'/g, "''")}%'
-      OR LOWER(Dam_Incharge) LIKE '%${q.replace(/'/g, "''")}%'
-      `,
-
+      where: `LOWER(Name_of_Dam) LIKE '%${q.replace(/'/g, "''")}%'`,
       outFields: ["*"],
       returnGeometry: true,
       orderByFields: ["Name_of_Dam ASC"],
